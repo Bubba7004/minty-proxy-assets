@@ -63,25 +63,43 @@
             }
           }
 
-          function rewrite(source) {
-            const L = String.raw`(?<![\w$.])(?:(?:window|self|top|parent|document)\.)?location`;
+function rewrite(source) {
+  // Convert this repository's hardcoded jsDelivr URLs before
+  // the downloaded HTML or its inline scripts execute.
+  source = source.replace(
+    /https:\/\/cdn\.jsdelivr\.net\/gh\/Bubba7004\/minty-proxy-assets(?:@([^\/\s"'<>`\\]+))?\//gi,
+    (match, version) => {
+      const ref =
+        !version || version === "latest" ? "HEAD" : version;
 
-            return source
-              .replace(
-                new RegExp(
-                  L + String.raw`\.(?:assign|replace)\s*\(`,
-                  "g"
-                ),
-                "__go("
-              )
-              .replace(
-                new RegExp(
-                  L + String.raw`(?:\.href)?\s*=(?!=)\s*([^;\n}]+)`,
-                  "g"
-                ),
-                "__go($1)"
-              );
-          }
+      return (
+        "https://raw.githack.com/" +
+        "Bubba7004/minty-proxy-assets/" +
+        ref +
+        "/"
+      );
+    }
+  );
+
+  const L =
+    String.raw`(?<![\w$.])(?:(?:window|self|top|parent|document)\.)?location`;
+
+  return source
+    .replace(
+      new RegExp(
+        L + String.raw`\.(?:assign|replace)\s*\(`,
+        "g"
+      ),
+      "__go("
+    )
+    .replace(
+      new RegExp(
+        L + String.raw`(?:\.href)?\s*=(?!=)\s*([^;\n}]+)`,
+        "g"
+      ),
+      "__go($1)"
+    );
+}
 
           async function build(value) {
             const target = cdnHtml(value) ||
