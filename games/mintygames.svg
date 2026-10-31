@@ -1,9 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" style="position: fixed; top: 0; left: 0;">
-  <foreignObject x="0" y="0" width="100%" height="100%">
-    <body xmlns="http://www.w3.org/1999/xhtml">
-      <meta content="width=device-width, initial-scale=1.0" name="viewport"></meta>
-      <iframe id="test" style="position:fixed; top:0; left:0; bottom:0; right:0; width:100%; height:100%; border:none; margin:0; padding:0; overflow:hidden; z-index:999999;"></iframe>
+  
+    
+      
+      
       <script><![CDATA[
+        // If your repo is too large for GitHub-backed jsDelivr, you can publish 
+        // the assets to npm and use the npm CDN endpoint:
+        // const START = "https://cdn.jsdelivr.net/npm/your-npm-package-name@latest/games/index-261014.html";
+        
         const START = "https://cdn.jsdelivr.net/gh/Bubba7004/minty-proxy-assets@latest/games/index-261014.html";
 
         // Injected into EVERY loaded page (and every nested iframe)
@@ -115,11 +119,23 @@
           };
         }
 
-        // Boot
-        patch();
-        const frame = document.getElementById("test");
-        window.__build(START).then((html) => { frame.srcdoc = html; }).catch(console.error);
+        // Safe Boot: Ensures DOM element 'test' exists before running
+        function init() {
+          const frame = document.getElementById("test");
+          if (!frame) {
+            setTimeout(init, 10);
+            return;
+          }
+          patch();
+          window.__build(START).then((html) => { frame.srcdoc = html; }).catch(console.error);
+        }
+
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", init);
+        } else {
+          init();
+        }
       ]]></script>
-    </body>
-  </foreignObject>
+    
+  
 </svg>
