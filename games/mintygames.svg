@@ -1,141 +1,327 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" style="position: fixed; top: 0; left: 0;">
-  
-    
-      
-      
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="100%"
+     height="100%"
+     style="position:fixed;top:0;left:0;">
+  <foreignObject x="0" y="0" width="100%" height="100%">
+    <body xmlns="http://www.w3.org/1999/xhtml" style="margin:0;">
+      <meta name="viewport"
+            content="width=device-width, initial-scale=1.0"></meta>
+
+      <iframe
+        id="test"
+        title="Game"
+        style="position:fixed;top:0;left:0;bottom:0;right:0;width:100%;height:100%;border:none;margin:0;padding:0;">
+      </iframe>
+
       <script><![CDATA[
-        // If your repo is too large for GitHub-backed jsDelivr, you can publish 
-        // the assets to npm and use the npm CDN endpoint:
-        // const START = "https://cdn.jsdelivr.net/npm/your-npm-package-name@latest/games/index-261014.html";
-        
-        const START = "https://cdn.jsdelivr.net/gh/Bubba7004/minty-proxy-assets@latest/games/index-261014.html";
+        const START =
+          "https://raw.githack.com/Bubba7004/minty-proxy-assets/HEAD/games/index-261014.html";
 
-        // Injected into EVERY loaded page (and every nested iframe)
         function patch() {
-          const CDN = "https://cdn.jsdelivr.net/";
+          const HTML_HOSTS = new Set([
+            "raw.githack.com",
+            "rawcdn.githack.com"
+          ]);
 
-          const cdnHtml = (u) => {
+          function cdnHtml(value) {
             try {
-              const x = new URL(u, document.baseURI);
-              return x.href.startsWith(CDN) && /\.html?$/i.test(x.pathname) ? x.href : null;
-            } catch (e) { return null; }
-          };
+              const url = new URL(value, document.baseURI);
 
-          // Rewrites location.href = X / location = X / location.assign(X) / location.replace(X)
-          function rewrite(src) {
-            const L = String.raw`(?<![\w$.])(?:(?:window|self|top|parent|document)\.)?location`;
-            return src
-              .replace(new RegExp(L + String.raw`\.(?:assign|replace)\s*\(`, "g"), "__go(")
-              .replace(new RegExp(L + String.raw`(?:\.href)?\s*=(?!=)\s*([^;\n}]+)`, "g"), "__go($1)");
+              if (url.protocol !== "https:") return null;
+              if (!/\.html?$/i.test(url.pathname)) return null;
+
+              if (HTML_HOSTS.has(url.hostname)) {
+                return url.href;
+              }
+
+              // Convert jsDelivr GitHub HTML links to raw.githack.
+              if (url.hostname === "cdn.jsdelivr.net") {
+                const match = url.pathname.match(
+                  /^\/gh\/([^/]+)\/([^/@]+)(?:@([^/]+))?\/(.+)$/
+                );
+
+                if (!match) return null;
+
+                const [, owner, repo, version, path] = match;
+                const ref =
+                  !version || version === "latest" ? "HEAD" : version;
+
+                return (
+                  "https://raw.githack.com/" +
+                  owner + "/" +
+                  repo + "/" +
+                  ref + "/" +
+                  path +
+                  url.search +
+                  url.hash
+                );
+              }
+
+              return null;
+            } catch {
+              return null;
+            }
           }
 
-          async function build(url) {
-            const u = new URL(url);
-            u.searchParams.set("t", Date.now());
-            let html = rewrite(await (await fetch(u.href)).text());
-            // injected AFTER rewriting so our own code isn't touched
-            const inject = '<base href="' + url.split("#")[0] + '">' +
-              "<scr" + "ipt>(" + patch.toString() + ")()</scr" + "ipt>";
+          function rewrite(source) {
+            const L = String.raw`(?<![\w$.])(?:(?:window|self|top|parent|document)\.)?location`;
+
+            return source
+              .replace(
+                new RegExp(
+                  L + String.raw`\.(?:assign|replace)\s*\(`,
+                  "g"
+                ),
+                "__go("
+              )
+              .replace(
+                new RegExp(
+                  L + String.raw`(?:\.href)?\s*=(?!=)\s*([^;\n}]+)`,
+                  "g"
+                ),
+                "__go($1)"
+              );
+          }
+
+          async function build(value) {
+            const target = cdnHtml(value) ||
+              new URL(value, document.baseURI).href;
+
+            const response = await fetch(target);
+            const text = await response.text();
+
+            if (!response.ok) {
+              throw new Error(
+                "Failed to load " + target +
+                "\nHTTP " + response.status +
+                "\n" + text.slice(0, 500)
+              );
+            }
+
+            if (/^\s*Package size exceeded the configured limit/i.test(text)) {
+              throw new Error(text.trim());
+            }
+
+            const html = rewrite(text);
+
+            const base = document.createElement("base");
+            base.href = (response.url || target).split("#")[0];
+
+            const inject =
+              base.outerHTML +
+              "<scr" + "ipt>(" +
+              patch.toString() +
+              ")()</scr" + "ipt>";
+
             return /<head[^>]*>/i.test(html)
               ? html.replace(/<head[^>]*>/i, (m) => m + inject)
               : inject + html;
           }
+
           window.__build = build;
 
-          function fill(frame, url) {
-            if (frame.__cdnUrl === url) return;
-            frame.__cdnUrl = url;
-            build(url).then((h) => { frame.srcdoc = h; }).catch(console.error);
+          function showError(frame, error) {
+            console.error(error);
+
+            const message = String(
+              error && error.message ? error.message : error
+            );
+
+            const escaped = message.replace(/[&<>"]/g, (character) => ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;"
+            }[character]));
+
+            frame.srcdoc =
+              '<!doctype html><html><head>' +
+              '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+              '</head><body style="margin:0;padding:24px;' +
+              'background:#111;color:#eee;font-family:system-ui,sans-serif;">' +
+              '<h2>Unable to load the page</h2>' +
+              '<pre style="white-space:pre-wrap;overflow-wrap:anywhere;">' +
+              escaped +
+              '</pre></body></html>';
           }
 
-          // __go: asks the PARENT to reload this frame with the new page
-          window.__go = function (u) {
-            const abs = cdnHtml(u);
-            if (abs && window.parent !== window) {
-              window.parent.postMessage({ __nav: true, url: abs }, "*");
+          function fill(frame, value) {
+            const url = cdnHtml(value);
+            if (!url || frame.__cdnUrl === url) return;
+
+            frame.__cdnUrl = url;
+
+            build(url)
+              .then((html) => {
+                // Ignore a response if a newer navigation has started.
+                if (frame.__cdnUrl !== url) return;
+                frame.srcdoc = html;
+              })
+              .catch((error) => {
+                if (frame.__cdnUrl !== url) return;
+                frame.__cdnUrl = null;
+                showError(frame, error);
+              });
+          }
+
+          window.__fill = fill;
+
+          window.__go = function(value) {
+            const url = cdnHtml(value);
+
+            if (url && window.parent !== window) {
+              window.parent.postMessage(
+                { __nav: true, url: url },
+                "*"
+              );
             } else {
-              location.href = new URL(u, document.baseURI).href; // non-jsDelivr-HTML: navigate normally
+              location.href = new URL(value, document.baseURI).href;
             }
           };
 
-          // Each level reloads whichever child frame asked to navigate
-          window.addEventListener("message", (e) => {
-            const d = e.data;
-            if (!d || d.__nav !== true) return;
-            for (const f of document.querySelectorAll("iframe")) {
-              if (f.contentWindow === e.source) { fill(f, d.url); return; }
+          window.addEventListener("message", (event) => {
+            const data = event.data;
+
+            if (
+              !data ||
+              data.__nav !== true ||
+              typeof data.url !== "string"
+            ) {
+              return;
+            }
+
+            const url = cdnHtml(data.url);
+            if (!url) return;
+
+            for (const frame of document.querySelectorAll("iframe")) {
+              if (frame.contentWindow === event.source) {
+                fill(frame, url);
+                return;
+              }
             }
           });
 
-          // iframe.src = "..."
-          const desc = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, "src");
+          const descriptor = Object.getOwnPropertyDescriptor(
+            HTMLIFrameElement.prototype,
+            "src"
+          );
+
           Object.defineProperty(HTMLIFrameElement.prototype, "src", {
-            get() { return desc.get.call(this); },
-            set(v) { const u = cdnHtml(v); if (u) fill(this, u); else desc.set.call(this, v); }
+            configurable: descriptor.configurable,
+            enumerable: descriptor.enumerable,
+
+            get() {
+              return descriptor.get.call(this);
+            },
+
+            set(value) {
+              const url = cdnHtml(value);
+
+              if (url) {
+                fill(this, url);
+              } else {
+                this.__cdnUrl = null;
+                this.removeAttribute("srcdoc");
+                descriptor.set.call(this, value);
+              }
+            }
           });
 
-          // iframe.setAttribute("src", "...")
-          const origSet = Element.prototype.setAttribute;
-          Element.prototype.setAttribute = function (name, value) {
-            if (this instanceof HTMLIFrameElement && String(name).toLowerCase() === "src") {
-              const u = cdnHtml(value);
-              if (u) { fill(this, u); return; }
+          const originalSetAttribute = Element.prototype.setAttribute;
+
+          Element.prototype.setAttribute = function(name, value) {
+            if (
+              this instanceof HTMLIFrameElement &&
+              String(name).toLowerCase() === "src"
+            ) {
+              const url = cdnHtml(value);
+
+              if (url) {
+                fill(this, url);
+                return;
+              }
+
+              this.__cdnUrl = null;
+              this.removeAttribute("srcdoc");
             }
-            return origSet.call(this, name, value);
+
+            return originalSetAttribute.call(this, name, value);
           };
 
-          // <iframe src="..."> in markup / innerHTML / appendChild
-          const check = (f) => {
-            const raw = f.getAttribute("src");
-            const u = raw && cdnHtml(raw);
-            if (u) { f.removeAttribute("src"); fill(f, u); }
-          };
-          const scan = (root) => {
-            if (root.nodeType !== 1) return;
-            if (root.tagName === "IFRAME") check(root);
-            root.querySelectorAll && root.querySelectorAll("iframe[src]").forEach(check);
-          };
-          new MutationObserver((muts) => {
-            for (const m of muts) {
-              if (m.type === "attributes") check(m.target);
-              else m.addedNodes.forEach(scan);
+          function check(frame) {
+            const raw = frame.getAttribute("src");
+            const url = raw && cdnHtml(raw);
+
+            if (url) {
+              frame.removeAttribute("src");
+              fill(frame, url);
             }
-          }).observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ["src"] });
+          }
+
+          function scan(root) {
+            if (root.nodeType !== 1) return;
+
+            if (root.tagName.toUpperCase() === "IFRAME") {
+              check(root);
+            }
+
+            if (root.querySelectorAll) {
+              root.querySelectorAll("iframe[src]").forEach(check);
+            }
+          }
+
+          new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+              if (mutation.type === "attributes") {
+                check(mutation.target);
+              } else {
+                mutation.addedNodes.forEach(scan);
+              }
+            }
+          }).observe(document, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ["src"]
+          });
+
           scan(document.documentElement);
 
-          // <a href> clicks
-          document.addEventListener("click", (e) => {
-            const a = e.target.closest && e.target.closest("a[href]");
-            const u = a && cdnHtml(a.href);
-            if (u) { e.preventDefault(); window.__go(u); }
+          document.addEventListener("click", (event) => {
+            const target = event.target;
+            const anchor = target && target.closest
+              ? target.closest("a[href]")
+              : null;
+
+            const url = anchor && cdnHtml(anchor.href);
+
+            if (url) {
+              event.preventDefault();
+              window.__go(url);
+            }
           }, true);
 
-          // window.open
-          const origOpen = window.open;
-          window.open = function (u, ...rest) {
-            const abs = u && cdnHtml(u);
-            if (abs) { window.__go(abs); return null; }
-            return origOpen.call(window, u, ...rest);
+          const originalOpen = window.open;
+
+          window.open = function(value, ...rest) {
+            const url = value && cdnHtml(value);
+
+            if (url) {
+              window.__go(url);
+              return null;
+            }
+
+            return originalOpen.call(window, value, ...rest);
           };
         }
 
-        // Safe Boot: Ensures DOM element 'test' exists before running
-        function init() {
-          const frame = document.getElementById("test");
-          if (!frame) {
-            setTimeout(init, 10);
-            return;
-          }
-          patch();
-          window.__build(START).then((html) => { frame.srcdoc = html; }).catch(console.error);
-        }
+        patch();
 
-        if (document.readyState === "loading") {
-          document.addEventListener("DOMContentLoaded", init);
-        } else {
-          init();
-        }
+        window.__fill(
+          document.getElementById("test"),
+          START
+        );
       ]]></script>
-    
-  
+    </body>
+  </foreignObject>
 </svg>
